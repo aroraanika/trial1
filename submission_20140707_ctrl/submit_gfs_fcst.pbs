@@ -1,0 +1,71 @@
+#!/bin/bash
+#PBS -N JOBNAME 
+#PBS -l walltime=3000:00:00
+###PBS -j oe
+#PBS -l select=10:ncpus=36:vntype=cray_compute -l place=scatter 
+##PBS -l nodes=10:ppn=36
+#PBS -q desk 
+
+cd $PBS_O_WORKDIR
+echo "We are running on " $PBS_NUM_NODES " nodes total"
+
+ulimit -s unlimited
+export F_UFMTENDIAN=big
+
+# CRAYXC environment settings
+##############################################
+. /opt/cray/pe/modules/3.2.10.6/init/ksh
+module load pbs
+module switch PrgEnv-cray/6.0.4 PrgEnv-intel
+module load ddt
+module load cray-netcdf
+module load cray-hdf5
+ulimit -c unlimited
+ulimit -s unlimited
+ulimit -a
+module load craype-hugepages16M
+module list
+
+
+
+export KMP_AFFINITY=granularity=fine,compact,1,0
+export MPICH_ABORT_ON_ERROR=1
+export MPICH_VERSION_DISPLAY=1
+export MPICH_ENV_DISPLAY=1
+export MPICH_RANK_REORDER_METHOD=1
+export MPICH_RANK_REORDER_DISPLAY=1
+export ATP_ENABLED=0
+export MALLOC_MMAP_MAX_=0
+export MALLOC_TRIM_THRESHOLD_=536870912
+export HUGETLB_NO_PREFAULT=1
+export HUGETLB_NO_RESERVE=yes
+#export OMP_STACKSIZE=4G   
+export KMP_STACKSIZE=4G
+export OMP_NUM_THREADS=2
+#export OMP_STACKSIZE=1G
+#export FORT_BUFFERED=true
+export machine=${machine:-CRAYXC}
+export MKL_NUM_THREADS=1
+export MKL_CBWR=AVX
+export MP_MPILIB=mpich2
+export USEBULKXFER=NO
+export MPICH_GNI_COLL_OPT_OFF=MPI_Alltoallv
+#export OMP_NUM_THREADS=9
+
+
+
+# Run global_fcst
+TBEGIN=`echo "print time();" | perl`
+#export PDY='20180307'
+#export cyc='00'
+
+export TAG=$PBS_JOBID
+export WORKTAG=WORK$TAG
+
+cd scriptdir
+
+./filesubmit jcap len1 len2  
+
+TEND=`echo "print time();" | perl`
+
+echo "++++ Total elapsed time for fcst `expr $TEND - $TBEGIN` seconds"

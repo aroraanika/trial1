@@ -1,0 +1,300 @@
+#!/bin/ksh 
+if [ $# -ne 2 ] ; then
+#    echo "Usage: $0 fore/hind cfs.config"
+#    exit 1
+     echo " No argument passed - forepost with default config file will be done"
+fi
+
+export MP_DEBUG_NOTIMEOUT=no
+export cyc=${cyc:-cyclehind}
+export PDY=PDYDATE
+
+export MP_IOAGENT_CNT=all
+export MP_IO_BUFFER_SIZE=8M
+export EXPT_NAME=CFS_abc
+export CCPOST=YES
+export GRIBVERSION=${GRIBVERSION:-'grib2'}
+export IO=360
+export JO=181
+
+export NDATE=${NDATE:-/home/DESK/anika/bin/ndate}
+source $MODULESHOME/init/ksh
+source $current_dir/setup.xc.intel
+
+
+####################################################
+# Runs POSTPROCESSOR FOR CFS HIND(FORE)CASTS
+#  Written by Shrinivas Moorthi - March 2004
+#  Updated for NCEP post by S. Moorthi - March 2010
+# original SFM post processor script written by Hann-Ming Henry Juang
+####################################################
+#
+# Specify whether the run is production or development
+#
+export RUN_ENVIR=${RUN_ENVIR:-prod}
+export nprocs=24
+
+#####################################################################################
+# Run config file to get input parameters
+# This config file should define the following variables
+# DATA_IN: Location of working directory, default to /tmpnwprd1
+# DEV_ECF: If the job is to be running using SMS, default to YES
+# SENDDBN: Set to NO for developers, default to YES
+# COM_IN:  Directory for input files, default to /com/$NET/${envir}
+# COM_OUT: Directory for output file, default to /com/$NET/${envir}
+# gespath: Directory for the guess or restart files, default to /nwges/${envir}
+# jlogfile: File for log messages
+#####################################################################################
+
+###############################################################
+# This block can be modified for different test environment
+###############################################################
+if [ $RUN_ENVIR = prod -a $envir != prod ]; then
+  export SENDDBN=${SENDDBN:-NO}
+  export jlogfile=${jlogfile:-/com/logs/${envir}/jlogfile}
+fi
+
+set -xa
+                                                                       
+#
+####################################
+# Specify NET and RUN Name and model
+####################################
+export NET=cfs
+export RTYPE=${1:-${RTYPE:-forepost}}
+export RUN=${RUN:-cfs}
+
+####################################
+# set up job name and  environment
+####################################
+export job=${job:-$RUN}
+export envir=${envir:-test}
+export host=${host:-`hostname | cut -c1`}
+
+###############################################
+# SETUP CLIMATE FOREFCST PROCESSING VARIABLES
+###############################################
+###############################################
+export PS4='$SECONDS + '
+date
+
+####################################
+# obtain unique process id (pid) and make temp directory
+####################################
+export pid=${pid:-$$}
+export DATA_IN=${DATA_IN:-hind_dir}
+
+export DATA=$DATA_IN/${job}.${pid}
+mkdir -p $DATA
+cd $DATA
+
+export POSTTYPE=${POSTTYPE:-$RUN}
+export ENS_MEM=${ENS_MEM:-1}
+ENS_MEM=$((ENS_MEM+0))
+if [ $ENS_MEM -lt 10 ] ; then export ENS_MEM=0$ENS_MEM ; fi
+
+#
+# Specify the year of the start and end of the hindcast
+#
+if [ $RUN = hindpost ] ; then
+ export START_YEAR=${STARTYEAR:-1981}
+ export END_YEAR=${END_YEAR:-2010}
+fi
+#
+####################################
+# Specify Execution Areas
+####################################
+#export HOMEcfs=${HOMEcfs:-/nw${envir}/${NET}.${model_ver}}
+export HOMEcfs=${HOMEcfs:-/home/DESK/anika/GFS-EL/gfs_pratyush/GFS}
+export EXECcfs=${EXECcfs:-$HOMEcfs/exec}
+export FIXcfs=${FIXcfs:-$HOMEcfs/fix}
+export USHcfs=${USHcfs:-$HOMEcfs/ush}
+export PARMcfs=${PARMcfs:-$HOMEcfs/parm}
+export PARMPOST=$HOMEcfs/parm/cfs_parm_am
+export POSTAVBLFLD=$PARMPOST/post_avblflds.xml
+export POSTGRB2TBL=$PARMPOST/params_grib2_tbl_new
+
+
+if [[ $RUN_ENVIR = prod || $RUN_ENVIR = devpara ]] then
+   export CONFIG_FILE=${CONFIG_FILE:-hind_script/file1}
+else
+   export CONFIG_FILE=${2:-${CONFIG_FILE:-cfs_config}}
+fi
+
+[[ $(dirname $CONFIG_FILE) = . ]]&&CONFIG_FILE=$(pwd)/$CONFIG_FILE
+if [[ ! -r $CONFIG_FILE ]];then
+  echo $0: inaccessible configuration file $CONFIG_FILE >&2
+  err_exit 
+fi
+
+export NDATE=${NDATE:-/home/DESK/anika/bin/ndate}
+export NHOUR=${NHOUR:-/home/DESK/anika/bin/nhour}
+export CNVGRIB=${CNVGRIB:-/home/DESK/anika/bin/cnvgrib}
+export WGRIB2=${WGRIB2:-/home/DESK/anika/bin/wgrib2}
+export CNVGRIB=${CNVGRIB:-/home/DESK/anika/bin/cnvgrib}
+
+####################################
+# Determine Job Output Name on System
+####################################
+export cyc=${cyc:-00}
+export outid="LL$job"
+export jobid="${outid}.o${pid}"
+export pgmout="OUTPUT.${pid}"
+export pgmerr=errfile
+export cycle=t${cyc}z
+
+####################################
+# SAVEGES  - Copy Files From TMPDIR to $GESdir
+# SENDECF  - Flag Events on SMS
+# SENDCOM  - Copy Files From TMPDIR to $COMOUT
+# SENDDBN  - Issue DBNet Client Calls
+# RERUN    - Rerun fcst from beginning (default no)
+# VERBOSE  - Specify Verbose Output in exglobal_fcst.sh.ecf
+####################################
+export SAVEGES=${SAVEGES:-YES}
+export SENDECF=${SENDECF:-YES}
+export SENDCOM=${SENDCOM:-YES}
+export SENDDBN=${SENDDBN:-YES}
+export RERUN=${RERUN:-NO}
+export VERBOSE=${VERBOSE:-YES}
+export BATCH_POST=${BATCH_POST:-NO}
+#################################
+# Define the Log File directory
+#################################
+export jlogfile=${jlogfile:-hind_script/logs/jlogfiles/jlogfile.${job}.${pid}}
+
+##############################
+# Set up the UTILITIES
+##############################
+export utilscript=${utilscript:-/home/DESK/anika/GFS-EL/gfs_pratyush/GFS/util/ush}
+                                                                                       
+##############################
+# Run setup to initialize working directory and utility scripts
+##############################
+sh $utilscript/setup.sh
+                                                                                       
+##############################
+# Run setpdy and initialize PDY variables
+##############################
+#sh $utilscript/setpdy.sh
+#. ./PDY
+export PDY=PDYDATE                                                                                       
+export CDATE=${CDATE:-${PDY}$cyc}
+
+#############################################
+# Get the variables setup from config script
+#############################################
+
+set -a;. $CONFIG_FILE;set +a
+
+env
+
+export DISK_GLOB=${DISK_GLOB:-/global/save}
+export DISK_CLIM=${DISK_CLIM:-/u}
+#
+#export MP_SHARED_MEMORY=yes
+export MP_SHARED_MEMORY=no
+#
+
+####################################
+# Specify Special Running Time Vars
+####################################
+
+msg="HAS BEGUN on `hostname`"
+$DATA/postmsg "$jlogfile" "$msg"
+
+############################################
+# determine  the current day of the forecast
+############################################
+#
+export LENDAY=$2
+export YEAR=`  echo $CDATE | cut -c1-4 `
+export MONTH=` echo $CDATE | cut -c5-6 `
+export DAY=`   echo $CDATE | cut -c7-8 `
+export HOUR=$cyc
+
+export GODAS_FREQ=0
+#######################################
+# Determine the day for forecast start
+#######################################
+#
+#
+export start_date=${start_date:-$(echo $($NDATE -$GODAS_FREQ $CDATE))}
+export YYYYSTART=$(echo $start_date | cut -c1-4)
+export MMSTART=$(echo $start_date | cut -c5-6)
+export DDSTART=$(echo $start_date | cut -c7-8)
+export HHSTART=$(echo $start_date | cut -c9-10)
+#
+export ocnic_date=${ocnic_date:-$start_date}
+export MMSS_OCN=$(echo $ocnic_date | cut -c5-6)
+export DDSS_OCN=$(echo $ocnic_date | cut -c7-8)
+#
+if [[ $RTYPE = forepost ]] ; then
+  export YYYYEND=$YYYYSTART
+else        # This is for hindpost
+  export YYYYSTART=${YYYYSTART:-$START_YEAR}
+  export YYYYEND=$END_YEAR
+# if [[ $MMSTART$DDSTART -eq $LEAPDAY ]] ; then
+#   echo 'No hindcast made for February 29'
+#   exit
+# fi
+fi
+YYYY_NOW=${YYYY_NOW:-$YYYYSTART}
+
+export start_date=$YYYYSTART$MMSTART$DDSTART$HHSTART
+if [ $LENMON -gt 0 ] ; then
+  YYYYSS=$(echo $start_date | cut -c1-4)
+  MMSS=$(echo $start_date | cut -c5-6)
+  YYYYEE=$YYYYSS
+  MMEE=$((MMSS+LENMON+1))
+  while [[ $MMEE -gt 12 ]] ; do
+    MMEE=$((MMEE-12))
+    YYYYEE=$((YYYYEE+1))
+  done
+  if [[ $MMEE -lt 10 ]] ; then MMEE=0$MMEE; fi
+  export end_date=${YYYYEE}${MMEE}0100
+elif [ $LENDAY -gt 0 ] ; then
+  export end_date=$($NDATE $((LENDAY*24)) $start_date)
+elif [ $LENHR -gt 0 ] ; then
+  export end_date=$($NDATE $LENHR $start_date)
+else
+  echo ' Need to specify propoer forecast length - run terminating'
+  exit
+fi
+
+export INTSIG=24
+export FHS=0
+
+export NTHSTACK=102400000
+
+export machine=${machine:-WCOSS}
+
+if [ $machine = IBM ]; then
+  APRUNCY=""
+elif [ $machine = WCOSS ]; then
+  APRUNCY=mpirun.lsf
+else
+  echo "APRUNCY not defined for this platform"
+fi
+
+export COMIN=outpath
+export COMOUT=outpath
+
+#############################################################
+# Execute the script
+#############################################################
+if [[ $YYYY_NOW -le $YYYYEND ]] ; then
+  SCRIPTDIR=${SCRIPTDIR:-$HOMEcfs/scripts}
+  POST_SCRIPT_DIR=${POST_SCRIPT_DIR:-$SCRIPTDIR}
+#  POST_SCRIPT=${POST_SCRIPT:-$POST_SCRIPT_DIR/excfs_post.sh.ecf}
+  POST_SCRIPT=${POST_SCRIPT:-/home/DESK/anika/GFS-EL/gfs_pratyush/GFS/scripts/exgfs_post.sh.ecf_ERP}
+  $POST_SCRIPT
+fi
+
+###################################
+# clean up the temperary directory
+###################################
+
+cd $DATA_IN
+###if [ ${RM_TMPDIR:-YES} = YES ] ; then rm -rf $DATA ; fi
+date

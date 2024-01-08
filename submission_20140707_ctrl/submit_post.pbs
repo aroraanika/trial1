@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N post_jcap_gfs
+#PBS -l walltime=3000:00:00
+#PBS -j oe
+#PBS -l select=10:ncpus=36:vntype=cray_compute -l place=scatter 
+#PBS -q desk 
+
+cd $PBS_O_WORKDIR
+echo "We are running on " $PBS_NUM_NODES " nodes total"
+
+ulimit -s unlimited
+export OMP_NUM_THREADS=1
+
+#export F_UFMTENDIAN=big
+ . $MODULESHOME/init/ksh
+module load pbs
+module load fftw
+module load cray-netcdf
+module unload cray-libsci
+module unload PrgEnv-cray
+module load PrgEnv-intel
+#module load intel/17.0.5.239
+module load craype-broadwell
+#module load craype-hugepages8M
+module load craype-hugepages32M
+export KMP_AFFINITY="granularity=fine,compact,1,0"
+export MPICH_ABORT_ON_ERROR=1
+export MPICH_VERSION_DISPLAY=1
+export MPICH_ENV_DISPLAY=1
+export MPICH_RANK_REORDER_METHOD=1
+export MPICH_RANK_REORDER_DISPLAY=1
+export ATP_ENABLED=0
+export MALLOC_MMAP_MAX_=0
+export MALLOC_TRIM_THRESHOLD_=536870912
+export HUGETLB_NO_PREFAULT=1
+
+export OMP_NUM_THREADS=1
+export OMP_STACKSIZE=1G
+
+export FORT_BUFFERED=true
+
+export TAG=$PBS_JOBID
+export WORKTAG=WORK$TAG
+
+cd scripta
+
+./filesubmit forepost len_1 
+

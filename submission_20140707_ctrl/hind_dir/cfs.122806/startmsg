@@ -1,0 +1,5 @@
+#!/bin/sh
+export NWPROD=${NWPROD:-/moes/home/amit/CFS/cfs.v2.1.18a/}
+[ -z "$utilscript" ] && utilscript="/moes/home/amit/CFS/cfs.v2.1.18a//util/ush"
+stmsg="$pgm started"
+sh ${utilscript}/postmsg.sh "$jlogfile" "$stmsg"

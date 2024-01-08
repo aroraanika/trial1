@@ -1,0 +1,30 @@
+#!/bin/sh
+set +x
+echo $pgm > pgmname
+[ -z "$pgmout" ] && echo "Variable pgmout not set"
+if [ ! -f break ]
+then
+   cat /dev/null > break
+fi
+paste pgmname break >> $pgmout
+rm pgmname 
+[ -f errfile ] && rm errfile
+export XLFUNITS=0
+unset `env | grep XLFUNIT | awk -F= '{print $1}'`
+if [ -z "$XLFRTEOPTS" ]
+then
+  export XLFRTEOPTS="unit_vars=yes"
+else
+  echo $XLFRTEOPTS | grep unit_vars
+  ret=$?
+  if test $ret -ne 0
+  then
+     export XLFRTEOPTS="${XLFRTEOPTS}:unit_vars=yes"
+  fi
+fi
+if [ ! -f tracer ]
+then
+   cat /dev/null > tracer
+fi
+cat tracer > errfile
+set -x

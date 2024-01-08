@@ -1,0 +1,340 @@
+#!/bin/ksh 
+
+set -xa
+
+export JCAP=$1
+export LENDAY=$2
+
+
+export RUN_ENVIR=${RUN_ENVIR:-prod}
+
+if [ $RUN_ENVIR != prod ] ; then
+  PBEG=${PBEG:-""}
+  $PBEG
+fi
+
+export PS4='$SECONDS + '
+date
+
+job=gfs
+# #### 08/01/2014 #############################
+# SETUP GFS FCST PROCESSING VARIABLES
+# #############################################
+
+####################################
+# obtain unique process id (pid) and make temp directory
+####################################
+export pid=${pid:-$$}
+export DATA=${DATA:-tmpdir}
+mkdir -p $DATA
+cd $DATA
+
+export cyc=${cyc:-00}
+export cycle=t${cyc}z
+
+####################################
+# Specify NET and RUN Name and model
+####################################
+export NET=${NET:-gfs}
+export RUN=${RUN:-gfs}
+
+####################################
+# Specify version numbers
+####################################
+export gsm_ver=${gsm_ver:-v12.0.0}
+
+####################################
+# File To Log Msgs
+####################################
+export jlogfile=${jlogfile:-tmpdir/logs/jlogfiles/jlogfile.${job}.${pid}}
+
+####################################
+# Determine Job Output Name on System
+####################################
+export outid="LL$job"
+export jobid="${outid}.o${pid}"
+export pgmout="OUTPUT.${pid}"
+export pgmerr=errfile
+
+####################################
+# SENDECF  - Flag Events on ECF
+# SENDCOM  - Copy Files From TMPDIR to $COMOUT
+# SENDDBN  - Issue DBNet Client Calls
+# RERUN    - Rerun fcst from beginning (default yes)
+# VERBOSE  - Specify Verbose Output in exglobal_fcst.sh.ecf
+####################################
+export SENDECF=${SENDECF:-YES}
+export SENDCOM=${SENDCOM:-YES}
+export SENDDBN=${SENDDBN:-NO}
+export RERUN=${RERUN:-NO}
+#export RERUN=${RERUN:-YES}
+export VERBOSE=${VERBOSE:-YES}
+
+####################################
+# Specify Execution Areas
+####################################
+#export HOMEcfs=${HOMEcfs:-/nw${envir}/${NET}.${model_ver}}
+export HOMEcfs=${HOMEcfs:-/home/DESK/anika/GFS-EL/gfs_pratyush/GFS}
+export NWPROD=$HOMEcfs
+export HOMEGLOBAL=${HOMEGLOBAL:-$NWPROD}
+export EXECGLOBAL=${EXECGLOBAL:-$HOMEGLOBAL/exec}
+export FIXGLOBAL=${FIXGLOBAL:-$HOMEGLOBAL/fix/cfs_fix_am}
+export USHGLOBAL=${USHGLOBAL:-$HOMEGLOBAL/ush}
+
+export FCSTEXEC=${FCSTEXEC:-/home/DESK/anika/GFS-EL/gfs_pratyush/GFS/sorc/global_fcst.fd/global_fcst}
+export ERRSCRIPT=err_chk
+export LOGSCRIPT=startmsg
+
+##############################
+# Set up the UTILITIES
+##############################
+export utilscript=${utilscript:-/$NWPROD/util/ush}
+
+export PDY=PDYDATE
+export CDATE=${CDATE:-${PDY}$cyc}
+
+##############################
+# Run setup to initialize working directory and utility scripts
+##############################
+$utilscript/setup.sh
+
+##############################
+# Run setpdy and initialize PDY variables
+##############################
+$utilscript/setpdy.sh
+. ./PDY
+
+
+export CONFIG_FILE=${CONFIG_FILE:-forecast_script/file1}
+
+#############################################
+# Get the variables setup from config script
+#############################################
+set -a; . $CONFIG_FILE; set +a
+
+##############################################
+# Define COM directories
+##############################################
+export COMIN=${COMIN:-$COMDIR}
+export COMOUT=${COMOUT:-$COMDIR}
+mkdir -m 775 -p $COMOUT
+
+##############################################
+# Define GES directories
+##############################################
+gespath=${gespath:-/nwges/${envir}}
+#export GESdir=${GESdir:-$gespath/${RUN}.${PDY}}
+#mkdir -m 775 -p $GESdir
+
+####################################
+# Specify Special Fcst Vars
+####################################
+#
+# Forecast Horizontal Resolution
+export JCAP=jcap
+export LONB=lonb
+export LATB=latb
+export DELTIM=timestep
+#
+export JCAP=${JCAP:-574}         # Spectral Truncation
+export LONB=${LONB:-1760}        # Number of Longitudes
+export LATB=${LATB:-880}         # Number of Latitudes
+export LONR=${LONR:-$LONB}        # Number of Physics Longitudes
+export LATR=${LATR:-$LATB}         # Number of Physics Latitudes
+export LONF=${LONF:-$LONB}
+export LATG=${LATG:-$LATB}
+#
+export LEVS=${LEVS:-64}          # Number of vertical levels
+#
+export DELTIM=${DELTIM:-120}     # Time step
+export DTPHYS=${DTPHYS:-450}     # Time step for physics
+#
+export CO2CON=${CO2CON:-$FIXGLOBAL/global_co2con.l${LEVS}.f77}
+export CO2DIR=${CO2DIR:-$FIXGLOBAL/fix_co2_proj}
+export CO2_seasonal_cycle=${CO2_seasonal_cycle:-$FIXGLOBAL/global_co2monthlycyc1976_2006.txt}
+export O3FORC=${O3FORC:-$FIXGLOBAL/global_o3prdlos.f77}
+export O3CLIM=${O3CLIM:-$FIXGLOBAL/global_o3clim.txt}
+export SLMASK=${SLMASK:-$FIXGLOBAL/global_slmask.t${JCAP}.grb}
+export MTNVAR=${MTNVAR:-$FIXGLOBAL/global_mtnvar.t${JCAP}.f77}
+export OROGRAPHY=${OROGRAPHY:-$FIXGLOBAL/global_orography.t$JCAP.grb}
+export OROGRAPHY_UF=${OROGRAPHY_UF:-$FIXGLOBAL/global_orography_uf.t$JCAP.$LONB.$LATB.grb}
+export LONSPERLAT=${LONSPERLAT:-$FIXGLOBAL/global_lonsperlat.t$JCAP.txt}
+export FNTSFC=${FNTSFC:-${FIXGLOBAL}/RTGSST.1982.2012.monthly.clim.grb}
+export FNAISC=${FNAISC:-${FIXGLOBAL}/CFSR.SEAICE.1982.2012.monthly.clim.grb}
+#
+
+export FNACNA=~/icec.day.mean_FINAL.grb
+
+export FNTSFA=~/sst.day.mean_FINAL.grb
+
+
+#export FNTSFA=~/sst_formatted_oi_shifted_1.grb
+
+#
+# Restart File Names
+#
+#export SIGR1=${SIGR1:-$GESdir/$RUN.$cycle.sigr1.t${JCAP}l${LEVS}}
+#export SIGR2=${SIGR2:-$GESdir/$RUN.$cycle.sigr2.t${JCAP}l${LEVS}}
+#export SFCR=${SFCR:-$GESdir/$RUN.$cycle.sfcr.t${JCAP}l${LEVS}}
+export SIGR1=${SIGR1:-$COMDIR/$RUN.$cycle.sigr1.t${JCAP}l${LEVS}}
+export SIGR2=${SIGR2:-$COMDIR/$RUN.$cycle.sigr2.t${JCAP}l${LEVS}}
+export SFCR=${SFCR:-$COMDIR/$RUN.$cycle.sfcr.t${JCAP}l${LEVS}}
+
+
+
+
+msg="HAS BEGUN on `hostname`"
+postmsg "$jlogfile" "$msg"
+
+###########################################################
+ulimit -s unlimited
+export NTHREADS=${NTHREADS:-${OMP_NUM_THREADS:-2}}
+export OMP_NUM_THREADS=${OMP_NUM_THREADS:-$NTHREADS}
+export MP_EUIDEVICE=${MP_EUIDEVICE:-min}
+export MP_EUILIB=${MP_EUILIB:-us}
+export MP_TASK_AFFINITY=${MP_TASK_AFFINITY:-cpu:$OMP_NUM_THREADS}
+export MP_EUIDEVELOP=${MP_EUIDEVELOP:-min}
+export KMP_STACKSIZE=${KMP_STACKSIZE:-2048m}
+export F_UFMTENDIAN=${F_UFMTENDIAN:-big}
+export MPICH_ALLTOALL_THROTTLE=${MPICH_ALLTOALL_THROTTLE:-0}
+export MP_SINGLE_THREAD=${MP_SINGLE_THREAD:-yes}
+export MP_EAGER_LIMIT=${MP_EAGER_LIMIT:-65536}
+export MP_USE_BULK_XFER=${MP_USE_BULK_XFER:-no}
+export MP_SHARED_MEMORY=${MP_SHARED_MEMORY:-yes}
+export MP_MPILIB=${MP_MPILIB:-mpich2}
+export MP_LABELIO=${MP_LABELIO:-yes}
+export MP_STDOUTMODE=${MP_STDOUTMODE:-unordered}
+export MP_COLLECTIVE_OFFLOAD=${MP_COLLECTIVE_OFFLOAD:-no}
+export APRUN=${APRUN:-mpirun.lsf}
+###########################################################
+export FHMAX=$((LENDAY*24))
+#export FHRES=$FHMAX     ### commented by ANIKA setting FHRES to 720 and FHROT to 240 to start from restart files at 10th day
+export FHRES=24     ### commented by ANIKA setting FHRES to 720 and FHROT to 240 to start from restart files at 10th day
+export FHZER=24
+export FHOUT=24
+
+#export FHROT=24000
+#export FHROT=240000
+
+export FHROT=13464
+env
+
+FORECASTSH=$HOMEGLOBAL/scripts/exglobal_fcst.sh.ecf
+
+# Determine whether or not to run 12-hour spin-up for low job
+SPINUPLOW=${SPINUPLOW:-NO}
+
+#export FNTSFA=forcingfile
+#export FNACNA=/home/ERPAS/imdoper/OBSERVAION_data/SST/noaa.seaice.day.mean.1x1.2001-2020.grb
+
+############################################################
+# Check if this is a restart, define restart files, run forecast
+############################################################
+
+#-----------------------------------
+if [ -f $SIGR1 -a -f $SIGR2 -a -f $SFCR -a $RERUN = NO ] ; then
+#-----------------------------------
+  cp $SIGR1 $DATA/sigr1
+  cp $SIGR2 $DATA/sigr2
+  cp $SFCR $DATA/sfcr
+
+  export SIGI=$SIGR1
+  export SIGI2=$SIGR2
+  export SFCI=$SFCR
+
+  if [ -f $SIGI -a -f $SIGI2 -a -f $SFCI ] ; then
+     msg="Forecast Starting With Restart Files in $GESdir"
+  #   postmsg "$jlogfile" "$msg"
+  else
+     msg="Restart Files Not Avaliable for $job"
+     postmsg "$jlogfile" "$msg"
+     export pgm=$job
+     export err=911
+     err_chk
+  fi
+  export APRUN="aprun -n 151 -N 18 -d 2  -cc depth env OMP_NUM_THREADS=2"
+
+# Execute the Forecast script
+#
+  $FORECASTSH
+    #.............................
+
+#-----------------------------------
+else
+#-----------------------------------
+#
+  export SIGINP=${SIGI:-outpath/siganl.gfs.${PDY}${cyc}}
+  export SFCINP=${SFCI:-outpath/sfcanl.gfs.${PDY}${cyc}}
+
+#  export SIGINP=$GESdir/$RUN.$cycle.sf$FHINI
+#  export SFCINP=$GESdir/$RUN.$cycle.bf$FHINI
+  export SIGOUT=$DATA/$RUN.$cycle.sigr.chgres
+  export SFCOUT=$DATA/$RUN.$cycle.sfcr.chgres
+
+# Set SIGLEVEL according to vertical coordinate type in $SIGINP
+  export SIGHDR=$EXECGLOBAL/global_sighdr
+  export idvc=$(echo idvc|$SIGHDR ${SIGINP})
+  if [ $idvc = 1 ] ; then
+     export SIGLEVEL=$FIXGLOBAL/global_siglevel.l$LEVS.txt
+  elif [ $idvc = 2 ] ; then
+     export SIGLEVEL=$FIXGLOBAL/global_hyblev.l$LEVS.txt
+  elif [ $idvc = 0 ] ; then
+     export SIGLEVEL=$FIXGLOBAL/global_hyblev.l64sl.txt
+  fi
+
+# Run global_chgres
+  export OUTTYP=${OUTTYP:-2}
+  export LATCH=${LATCH:-8}
+  export IDVC=2
+#  export CHGRESVARS="use_ufo=.true.,IALB=0,ntrac=3,idvc=2,idvt=21,idsl=0,IDVM=0,"
+  export CHGRESVARS="IALB=0,ntrac=3,idvc=2,idvt=21,idsl=0,IDVM=0,"
+  export CHGRESVARS="IDVC=$IDVC,IVSSIG=$ivssig,IVSSFC=$ivssfc,NVCOORD=$nvcoord,IDVM=0,IDSL=0,LATCH=$LATCH,$CHGRESVARS"
+#  export OMP_NUM_THREADS_CH=${OMP_NUM_THREADS_CH:-16}
+  ${CHGRESSH:-$HOMEGLOBAL/ush/cfs_chgres.sh}
+#  rc=$?
+#  if [[ $rc -ne 0 ]];then $PERR;exit 1;fi
+  cat $pgmout
+
+  export SIGI=$SIGOUT
+  export SFCI=$SFCOUT
+
+  if [ -f $SIGI -a -f $SFCI ] ; then
+     msg="Forecast Starting with Fields Produced by CHGRES"
+     postmsg "$jlogfile" "$msg"
+  else
+     msg="Fields Produced by CHGRES Not Available for $job"
+     postmsg "$jlogfile" "$msg"
+     export pgm=$job
+     export err=911
+     err_chk
+  fi
+
+#
+#export APRUN="aprun -n 73 -N 18 -d 2  -cc depth env OMP_NUM_THREADS=2"
+export APRUN="aprun -n 151 -N 18 -d 2  -cc depth env OMP_NUM_THREADS=2"
+
+# Execute the Forecast script
+#
+  $FORECASTSH
+#.............................
+#-----------------------------------
+fi
+#-----------------------------------
+
+cat $pgmout
+
+msg="ENDED NORMALLY."
+postmsg "$jlogfile" "$msg"
+
+##############################
+# Remove the Temporary working directory
+##############################
+
+#if [ ${RM_TMPDIR:-YES} = YES ] ; then rm -rf $DATA ; fi
+
+if [ $RUN_ENVIR != prod ] ; then
+     PEND=${PEND:-""}
+     export CSTEP=fcst1
+    $PEND
+fi
+date
